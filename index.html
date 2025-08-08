@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title> 3D SHAHIN - inertia rotation</title>
+<style>
+  @font-face {
+    font-family: 'Kalpurush';
+    src: url('https://fonts.gstatic.com/ea/kalpurush/v4/Kalpurush-Regular.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+  }
+  body, html {
+    margin:0; padding:0; overflow:hidden; height:100vh; background:#fff;
+    font-family: 'Kalpurush', sans-serif;
+    user-select:none;
+  }
+  canvas {
+    display: block;
+    background: white;
+    cursor: grab;
+  }
+  canvas:active {
+    cursor: grabbing;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas3d"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas3d');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  class Vector3 {
+    constructor(x=0,y=0,z=0) {
+      this.x=x; this.y=y; this.z=z;
+    }
+    rotateX(angle) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const y = this.y * cos - this.z * sin;
+      const z = this.y * sin + this.z * cos;
+      this.y = y; this.z = z;
+    }
+    rotateY(angle) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const x = this.z * sin + this.x * cos;
+      const z = this.z * cos - this.x * sin;
+      this.x = x; this.z = z;
+    }
+    project(viewWidth, viewHeight, fov, viewerDistance) {
+      const factor = fov / (viewerDistance + this.z);
+      const x = this.x * factor + viewWidth/2;
+      const y = this.y * factor + viewHeight/2;
+      return {x, y, scale: factor};
+    }
+  }
+
+  function randomPointOnSphere(radius) {
+    const theta = Math.acos(2 * Math.random() - 1);
+    const phi = 2 * Math.PI * Math.random();
+    const x = radius * Math.sin(theta) * Math.cos(phi);
+    const y = radius * Math.sin(theta) * Math.sin(phi);
+    const z = radius * Math.cos(theta);
+    return new Vector3(x,y,z);
+  }
+
+  const pointsCount = 1000;
+  const radius = 250;
+  const points = [];
+  for(let i=0; i<pointsCount; i++) {
+    points.push(randomPointOnSphere(radius));
+  }
+
+  // Rotation state and velocity for inertia effect
+  let rotationX = 0;
+  let rotationY = 0;
+  let velocityX = 0;
+  let velocityY = 0;
+  let isDragging = false;
+  let lastX, lastY;
+
+  canvas.addEventListener('mousedown', e => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+    velocityX = 0; velocityY = 0; // Reset velocity when drag starts
+  });
+
+  window.addEventListener('mouseup', e => {
+    isDragging = false;
+    canvas.style.cursor = 'grab';
+  });
+
+  window.addEventListener('mousemove', e => {
+    if(!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+
+    rotationY += dx * 0.01;
+    rotationX += dy * 0.01;
+
+    // velocity updated each frame while dragging
+    velocityY = dx * 0.01;
+    velocityX = dy * 0.01;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+
+  // Zoom (mouse wheel)
+  let zoom = 500;
+  window.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom += e.deltaY * 0.5;
+    if(zoom < 100) zoom = 100;
+    if(zoom > 1500) zoom = 1500;
+  }, {passive:false});
+
+  function easeOutVelocity(v) {
+    // 10 seconds to slow down to ~0 with linear friction
+    const friction = 0.98;
+    return v * friction;
+  }
+
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#222';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for(let p of points) {
+      let v = new Vector3(p.x, p.y, p.z);
+      v.rotateX(rotationX);
+      v.rotateY(rotationY);
+
+      const proj = v.project(W, H, 500, zoom);
+
+      if(proj.scale <= 0) continue;
+
+      const size = Math.min(Math.max(12 * proj.scale, 6), 24);
+      ctx.font = `${size}px Kalpurush`;
+      ctx.fillText('শাহিন', proj.x, proj.y);
+    }
+
+    // if not dragging, apply inertia slowing
+    if(!isDragging) {
+      velocityX = easeOutVelocity(velocityX);
+      velocityY = easeOutVelocity(velocityY);
+
+      rotationX += velocityX;
+      rotationY += velocityY;
+
+      // stop when velocity is very small
+      if(Math.abs(velocityX) < 0.0001) velocityX = 0;
+      if(Math.abs(velocityY) < 0.0001) velocityY = 0;
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+})();
+</script>
+
+</body>
+</html>
